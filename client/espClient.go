@@ -12,14 +12,19 @@ import (
 )
 
 type EspClient struct {
-	servAddr, espAddr *net.UDPAddr
-	udpConn           *net.UDPConn
-	rX, rY, rZ        float64
-	isDone            bool
-	isInitializated   bool
-	mutex             sync.Mutex
-	lastMessageTime   time.Time
-	buf               []byte
+	espAddr *net.UDPAddr
+	udpConn *net.UDPConn
+
+	// rotate pos
+	rX, rY, rZ float64
+	// drive reference
+	dr1, dr2 int
+
+	isDone          bool
+	isInitializated bool
+	mutex           sync.Mutex
+	lastMessageTime time.Time
+	buf             []byte
 }
 
 // "192.168.0.110:4210"
@@ -31,17 +36,13 @@ func NewEspClient(address string) (*EspClient, error) {
 	}
 	client.espAddr = ESPAddr
 
-	ServerAddr, err := net.ResolveUDPAddr("udp", ":")
+	conn, err := net.DialUDP("udp", nil, ESPAddr)
 	if err != nil {
 		return client, err
 	}
-	client.servAddr = ServerAddr
+	client.udpConn = conn
 
-	ServerConn, err := net.ListenUDP("udp", ServerAddr)
-	if err != nil {
-		return client, err
-	}
-	client.udpConn = ServerConn
+	fmt.Println(conn.LocalAddr())
 
 	client.buf = make([]byte, 120)
 
@@ -56,64 +57,39 @@ func NewEspClient(address string) (*EspClient, error) {
 			time.Sleep(time.Millisecond * 1500)
 		}
 	}()
+
+	go client.handleDriveRef()
 	return client, nil
-}
-func (esp *EspClient) IsWorking() bool {
-	esp.mutex.Lock()
-	defer esp.mutex.Unlock()
-	return esp.isInitializated && !esp.isDone
-}
-
-func (esp *EspClient) IsDone() bool {
-	esp.mutex.Lock()
-	defer esp.mutex.Unlock()
-	return esp.isDone
-}
-
-func (esp *EspClient) IsConnected() bool {
-	esp.mutex.Lock()
-	defer esp.mutex.Unlock()
-	return time.Now().Sub(esp.lastMessageTime).Seconds() <= 0.5
-}
-
-func (esp *EspClient) Stop() {
-	fmt.Println(1)
-	esp.mutex.Lock()
-	defer esp.mutex.Unlock()
-	esp.udpConn.Close()
-	fmt.Println(2)
-	esp.isDone = true
 }
 
 func (esp *EspClient) SendCommand(command, data string) {
-	// fmt.Println("SendCommand")
 	msg := fmt.Sprintf(">%s:%s<", command, data)
 
 	buf1 := []byte(msg)
 
-	n, err := esp.udpConn.WriteToUDP(buf1, esp.espAddr)
+	_, err := esp.udpConn.Write(buf1)
 	if err != nil {
-		fmt.Println(msg, err)
+		log.Println(msg, err)
 	}
-	fmt.Println(n)
 }
 
 var reSendAnglesData = regexp.MustCompile(`\w{2} (.?\d+.\d+)`)
 
 func (esp *EspClient) handleIncomingCommand() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Println("handleIncomingCommand Recovered in f", r)
+		}
+	}()
 	buf := esp.buf
 
-	for esp.IsDone() {
+	for !esp.IsDone() {
 		n, _, err := esp.udpConn.ReadFromUDP(buf)
+
 		if err != nil {
 			fmt.Println(err)
 			continue
 		}
-		// if n == 0 {
-		// 	continue
-		// }
-		fmt.Println("handleIncomingCommand")
-		fmt.Println(string(buf[:n]))
 
 		esp.mutex.Lock()
 		esp.lastMessageTime = time.Now()
@@ -157,7 +133,7 @@ func (esp *EspClient) handleIncomingCommand() {
 			esp.rY = rY
 			esp.rZ = rZ
 
-			fmt.Printf("x %4.2f y %4.2f z%4.2f\n", rX, rY, rZ)
+			// fmt.Printf("x %4.2f y %4.2f z%4.2f\n", rX, rY, rZ)
 
 		case "dr1":
 			fmt.Println(command, string(data))
@@ -174,4 +150,50 @@ func (esp *EspClient) GetRotatePos() (rX, rY, rZ float64) {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
 	return esp.rX, esp.rY, esp.rZ
+}
+
+func (esp *EspClient) SetDriveRef(dr1, dr2 int) {
+	esp.mutex.Lock()
+	esp.dr1 = dr1
+	esp.dr2 = dr2
+	esp.mutex.Unlock()
+}
+
+func (esp *EspClient) handleDriveRef() {
+
+	for !esp.IsDone() {
+		esp.mutex.Lock()
+		dr1 := esp.dr1
+		dr2 := esp.dr2
+		esp.mutex.Unlock()
+
+		esp.SendCommand("dr1", strconv.Itoa(dr1))
+		esp.SendCommand("dr2", strconv.Itoa(dr2))
+		time.Sleep(time.Millisecond * 100)
+	}
+}
+
+func (esp *EspClient) IsWorking() bool {
+	esp.mutex.Lock()
+	defer esp.mutex.Unlock()
+	return esp.isInitializated && !esp.isDone
+}
+
+func (esp *EspClient) IsDone() bool {
+	esp.mutex.Lock()
+	defer esp.mutex.Unlock()
+	return esp.isDone
+}
+
+func (esp *EspClient) IsConnected() bool {
+	esp.mutex.Lock()
+	defer esp.mutex.Unlock()
+	return time.Now().Sub(esp.lastMessageTime).Seconds() <= 0.5
+}
+
+func (esp *EspClient) Stop() {
+	esp.mutex.Lock()
+	defer esp.mutex.Unlock()
+	esp.udpConn.Close()
+	esp.isDone = true
 }
