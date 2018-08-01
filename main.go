@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/signal"
 	"time"
@@ -30,13 +31,21 @@ func main() {
 		os.Exit(0)
 	}()
 
-	ticker := time.NewTicker(time.Millisecond * 500)
+	ticker := time.NewTicker(time.Millisecond * 20)
 	for segway.IsWorking() {
 		<-ticker.C
 		if segway.IsConnected() {
-			fmt.Println("connected")
-		} else {
-			fmt.Println("disconnected")
+			rX, _, _ := segway.GetRotatePos()
+			fmt.Println(rX)
+			if math.Abs(rX) > 21 {
+				segway.SetDriveRef(0, 0)
+				continue
+			}
+			offset := float64(3.2)
+			dr1 := int((rX - offset) * ((1024) / 5))
+			// dr1 := 0
+			// dr1 := int(math.Sinh((rX - offset)) * 1023)
+			segway.SetDriveRef(dr1, dr1)
 		}
 	}
 }
