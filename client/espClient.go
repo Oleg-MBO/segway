@@ -56,6 +56,7 @@ func NewEspClient(address string) (*EspClient, error) {
 			client.SendCommand("hello", strconv.Itoa(counter))
 			time.Sleep(time.Millisecond * 1500)
 		}
+
 	}()
 
 	go client.handleDriveRef()
@@ -144,6 +145,8 @@ func (esp *EspClient) handleIncomingCommand() {
 			fmt.Printf("undefinded message: %s\n", string(buf[:n]))
 		}
 	}
+	log.Println("esp is done.")
+
 }
 
 func (esp *EspClient) GetRotatePos() (rX, rY, rZ float64) {
@@ -169,7 +172,7 @@ func (esp *EspClient) handleDriveRef() {
 
 		esp.SendCommand("dr1", strconv.Itoa(dr1))
 		esp.SendCommand("dr2", strconv.Itoa(dr2))
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 5)
 	}
 }
 
@@ -194,6 +197,8 @@ func (esp *EspClient) IsConnected() bool {
 func (esp *EspClient) Stop() {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
+	esp.SendCommand("dr1", "0")
+	esp.SendCommand("dr2", "0")
 	esp.udpConn.Close()
 	esp.isDone = true
 }
