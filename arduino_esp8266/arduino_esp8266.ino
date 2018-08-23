@@ -8,21 +8,26 @@
 //#include <OSCMessage.h>
 
 
-
-
 #define udpBufferLength 255
-
 #define commandStartChar 62 //>
 #define commandDataChar 58  //:
 #define commandEndChar 60   //<
 
-const char* ssid = "2_4G";
-const char* password = "123567785962325";
+extern const int D1PWM;
+extern const int D1DIR;
+extern const int D2PWM;
+extern const int D2DIR;
+
+extern const char* ssid;
+extern const char* password;
+
+extern bool getAccData;
+extern bool getGyroAngleData;
+extern bool getAccAngleData;
 
 WiFiUDP Udp;
 unsigned int localUdpPort = 4210;  // local port to listen on
 char incomingPacket[udpBufferLength];  // buffer for incoming packets
-char  replyPacket[] = "Hi there! Got the message :-)";  // a reply string to send back
 
 
 const long interval = 1000;           // interval at which to blink (milliseconds)
@@ -35,11 +40,7 @@ bool gotmessage = false;
 IPAddress outIp;
 uint16_t outPort;
 
-const int D1PWM = 13;
-const int D1DIR = 14;
 
-const int D2PWM = 12;
-const int D2DIR = 16;
 
 unsigned long timeLastCommangGot = 0;;
 
@@ -67,8 +68,7 @@ void setup()
   WiFi.begin(ssid, password);
 
   int countWait = 0;
-  while (WiFi.status() != WL_CONNECTED)
-  {
+  while (WiFi.status() != WL_CONNECTED) {
     countWait++;
     delay(500);
     yield();
@@ -90,29 +90,7 @@ void setup()
 }
 
 
-void sendData(String  command, String  data) {
 
-  if (gotmessage ) {
-    Udp.beginPacket(outIp, outPort);
-
-    Udp.print(">");
-    Udp.print(command);
-    Udp.print(":");
-    Udp.print(data);
-    Udp.print("<");
-    Udp.endPacket();
-    //    Serial.print("send udp: ");
-    //    Serial.print(command);
-    //    Serial.print(": ");
-    //    Serial.println(data);
-
-  }
-  //  else {
-  //    Serial.print(command);
-  //    Serial.print(": ");
-  //    Serial.println(data);
-  //  }
-}
 
 
 void loop()
@@ -126,13 +104,13 @@ void loop()
   //  __________________________________________________
 
   int packetSize = Udp.parsePacket();
+  //  START HANDLE COMMAND
   if (packetSize)  {
     timeLastCommangGot = millis();
     // receive incoming UDP packets
-//    Serial.printf("Received % d bytes from % s, port % d\n", packetSize, Udp.remoteIP().toString().c_str(), Udp.remotePort());
+    //    Serial.printf("Received % d bytes from % s, port % d\n", packetSize, Udp.remoteIP().toString().c_str(), Udp.remotePort());
     int len = Udp.read(incomingPacket, 255);
-    if (len > 0)
-    {
+    if (len > 0) {
       incomingPacket[len] = 0;
     }
 
@@ -169,75 +147,19 @@ void loop()
     String bufferStr = String(incomingPacket);
     String command = bufferStr.substring(1, dataCharPos);
     String data = bufferStr.substring(dataCharPos + 1, endCharPos);
-
-
-    if (command == "qw") {
-      int dataInt = data.toInt();
-      sendData(command, String(dataInt));
-
-    } else if (command == "dr1") {
-      bool isNegative = false;
-      int dataInt;
-      if (strstr(data.c_str(), "-")) {
-        isNegative = true;
-        data = data.substring( 1, data.length());
-      }
-      dataInt = data.toInt();
-
-
-      if (dataInt > PWMRANGE) {
-        dataInt = PWMRANGE;
-      } else if (dataInt < 0) {
-        dataInt = 0;
-      }
-      if (!isNegative) {
-        digitalWrite (D1DIR, HIGH);
-      } else {
-        digitalWrite (D1DIR, LOW);
-      }
-      analogWrite(D1PWM, dataInt);
-      //      if (isNegative) {
-      //        dataInt = dataInt * -1;
-      //      }
-      //      sendData("dr1", String(dataInt));
-
-    } else if (command == "dr2") {
-      bool isNegative = false;
-      int dataInt;
-      if (strstr(data.c_str(), "-")) {
-        isNegative = true;
-        data = data.substring( 1, data.length());
-      }
-      dataInt = data.toInt();
-
-
-      if (dataInt > PWMRANGE) {
-        dataInt = PWMRANGE;
-      } else if (dataInt < 0) {
-        dataInt = 0;
-      }
-      if (!isNegative) {
-        digitalWrite (D2DIR, HIGH);
-      } else {
-        digitalWrite (D2DIR, LOW);
-      }
-      analogWrite(D2PWM, dataInt);
-      //      if (isNegative) {
-      //        dataInt = dataInt * -1;
-      //      }
-      //      sendData("dr2", String(dataInt));
-    }
-
+    commandHandler(command, data);
   }
-  //  END HANDE COMMAND
+  //  END HANDLE COMMAND
+
   unsigned long  now = millis();
   //  unsigned long lastCommandDelay = now - timeLastCommangGot;
   if ((now - timeLastCommangGot) > 2000) {
+    //    if 2s haven`t got messages
     timeLastCommangGot = now;
-    //    Serial.print("Havent got commands ");
-    //    Serial.print(lastCommandDelay / 1000);
-    //    Serial.println(" s");
 
+
+    analogWrite(D1PWM, 0);
+    analogWrite(D2PWM, 0);
     Serial.print("Curently listening at IP ");
     Serial.print( WiFi.localIP().toString().c_str());
     Serial.print(":");

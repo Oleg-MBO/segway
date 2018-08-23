@@ -1,3 +1,7 @@
+extern bool getAccData;
+extern bool getGyroAngleData;
+extern bool getAccAngleData;
+
 /* ============================================
   I2Cdev device library code is placed under the MIT license
   Copyright (c) 2012 Jeff Rowberg
@@ -75,27 +79,60 @@ void mpu_setup()
 void mpu_loop()
 {
   // if programming failed, don't try to do anything
-  if (mpuInterrupt) return;
+  if (!mpuInterrupt) return;
+  mpuInterrupt = false;
 
   mpu6050.update();
-  //
-  char dataBuffer[31] = "";
 
-  String data = String("aX ") + String(mpu6050.getAngleX());
-  data = data         + String(";aY ");
-  data = data + String(mpu6050.getAngleY());
-
-  data = data +      String(";aZ ");
-  data = data + String(mpu6050.getAngleZ());
-
-  //  data.toCharArray(dataBuffer, 30);
-  sendData(commandSendAngles, data );
   //  Serial.print("angleX : ");
   //  Serial.print(mpu6050.getAngleX());
   //  Serial.print("\tangleY : ");
   //  Serial.print(mpu6050.getAngleY());
   //  Serial.print("\tangleZ : ");
   //  Serial.println(mpu6050.getAngleZ());
+
+
+
+  //  SEND commandSendAngles command
+  String data = String("X ") + String(mpu6050.getAngleX());
+  data = data + String(";Y ");
+  data = data + String(mpu6050.getAngleY());
+  data = data + String(";Z ");
+  data = data + String(mpu6050.getAngleZ());
+
+  //  sendData(commandSendAngles, data );
+  sendData(commandSendAngles, XYZData(mpu6050.getAngleX(), mpu6050.getAngleY(), mpu6050.getAngleZ() ));
+
+  //  END SEND commandSendAngles comma
+
+
+  if (getAccData) {
+    //    String data = String("X ") + String(mpu6050.getAccX());
+    //    data = data + String(";Y ");
+    //    data = data + String(mpu6050.getAccY());
+    //    data = data + String(";Z ");
+    //    data = data + String(mpu6050.getAccZ());
+    sendData(commandSendAcc, XYZData(mpu6050.getAccX(), mpu6050.getAccY(), mpu6050.getAccZ() ));
+  }
+  if (getGyroAngleData) {
+    //    String data = String("X ") + String(mpu6050.getAccX());
+    //    data = data + String(";Y ");
+    //    data = data + String(mpu6050.getAccY());
+    //    data = data + String(";Z ");
+    //    data = data + String(mpu6050.getAccZ());
+    sendData(commandSendGyroAngle, XYZData(mpu6050.getGyroAngleX(), mpu6050.getGyroAngleY(), mpu6050.getGyroAngleZ()));
+  }
+
+  if ( getAccAngleData) {
+    sendData(commandSendAccAngle, XYZData(mpu6050.getAccAngleX(), mpu6050.getAccAngleY(), 0));
+  }
+
+  sendData(commandSendDataDone, "1" );
+}
+
+String XYZData(float x , float y , float z ) {
+  String data = String("X ") + String(x) + String(";Y ") + String(y) + String(";Z ") + String(z);
+  return data;
 }
 
 
