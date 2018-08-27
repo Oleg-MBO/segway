@@ -5,30 +5,38 @@ import (
 	"fmt"
 	"log"
 	"net"
-	"regexp"
 	"strconv"
 	"sync"
 	"time"
 )
 
+// EspClient struct that represent client to segway on the esp
 type EspClient struct {
 	espAddr *net.UDPAddr
 	udpConn *net.UDPConn
 
 	// rotate pos
-	rX, rY, rZ float64
+	// rX, rY, rZ float64
 	// drive reference
 	dr1, dr2 int
 
 	isDone          bool
-	isInitializated bool
+	isStarted       bool
 	mutex           sync.Mutex
 	lastMessageTime time.Time
 	buf             []byte
+
+	dataChan chan EspData
+
+	prepareData EspData
 }
 
-// "192.168.0.110:4210"
-func NewEspClient(address string) (*EspClient, error) {
+// InitEspClient initialase esp client and return structure with client
+// if address is empty default adress will be "192.168.0.110:4210"
+func InitEspClient(address string) (*EspClient, error) {
+	if address == "" {
+		address = "192.168.0.110:4210"
+	}
 	client := new(EspClient)
 	ESPAddr, err := net.ResolveUDPAddr("udp", address)
 	if err != nil {
@@ -42,25 +50,32 @@ func NewEspClient(address string) (*EspClient, error) {
 	}
 	client.udpConn = conn
 
-	fmt.Println(conn.LocalAddr())
-
 	client.buf = make([]byte, 120)
 
-	client.isInitializated = true
+	client.isStarted = false
 	client.isDone = false
-	go client.handleIncomingCommand()
-	// send hello command every 1.5 s
-	go func() {
-		counter := 0
-		for client.IsWorking() {
-			client.SendCommand("hello", strconv.Itoa(counter))
-			time.Sleep(time.Millisecond * 1500)
-		}
 
-	}()
+	client.dataChan = make(chan EspData, 1)
 
-	go client.handleDriveRef()
 	return client, nil
+}
+
+func (esp *EspClient) Start() {
+	if !esp.isStarted {
+		go esp.handleIncomingCommand()
+		// send hello command every 1.5 s
+		go func() {
+			counter := 0
+			for esp.IsWorking() {
+				esp.SendCommand("hello", strconv.Itoa(counter))
+				time.Sleep(time.Millisecond * 1500)
+			}
+
+		}()
+	}
+
+	go esp.handleDriveRef()
+	esp.isStarted = false
 }
 
 func (esp *EspClient) SendCommand(command, data string) {
@@ -73,8 +88,6 @@ func (esp *EspClient) SendCommand(command, data string) {
 		log.Println(msg, err)
 	}
 }
-
-var reSendAnglesData = regexp.MustCompile(`\w{2} (.?\d+.\d+)`)
 
 func (esp *EspClient) handleIncomingCommand() {
 	defer func() {
@@ -91,6 +104,9 @@ func (esp *EspClient) handleIncomingCommand() {
 			fmt.Println(err)
 			continue
 		}
+		// if n == 0 {
+		// 	continue
+		// }
 
 		esp.mutex.Lock()
 		esp.lastMessageTime = time.Now()
@@ -108,40 +124,62 @@ func (esp *EspClient) handleIncomingCommand() {
 		data := make([]byte, endTagPos-dataPos, endTagPos-dataPos)
 		copy(data[:], buf[dataPos+1:endTagPos])
 
+		dataStr := string(data)
+
 		switch command {
 		case "SendAngles":
-			submatch := reSendAnglesData.FindAllStringSubmatch(string(data), -1)
-
-			if len(submatch) != 3 {
-				log.Printf("error parse command %s with data %s\n", command, string(data))
-			}
-			rX, err := strconv.ParseFloat(submatch[0][1], 64)
+			X, Y, Z, err := parceXYZ(dataStr)
 			if err != nil {
-				log.Println(err)
+				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
 				continue
 			}
-			rY, err := strconv.ParseFloat(submatch[1][1], 64)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			rZ, err := strconv.ParseFloat(submatch[2][1], 64)
-			if err != nil {
-				log.Println(err)
-				continue
-			}
-			esp.rX = rX
-			esp.rY = rY
-			esp.rZ = rZ
+			esp.prepareData.AngleX = X
+			esp.prepareData.AngleY = Y
+			esp.prepareData.AngleZ = Z
 
 			// fmt.Printf("x %4.2f y %4.2f z%4.2f\n", rX, rY, rZ)
 
-		case "dr1":
-			fmt.Println(command, string(data))
-		case "dr2":
-			fmt.Println(command, string(data))
-		default:
+		case "SendAcc":
+			X, Y, Z, err := parceXYZ(dataStr)
+			if err != nil {
+				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				continue
+			}
+			esp.prepareData.AccX = X
+			esp.prepareData.AccY = Y
+			esp.prepareData.AccZ = Z
+		case "SendAccAngle":
+			X, Y, Z, err := parceXYZ(dataStr)
+			if err != nil {
+				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				continue
+			}
+			esp.prepareData.AAngleX = X
+			esp.prepareData.AAngleX = Y
+			esp.prepareData.AAngleX = Z
+		case "SendGyroAngle":
+			X, Y, Z, err := parceXYZ(dataStr)
+			if err != nil {
+				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				continue
+			}
+			esp.prepareData.GyroX = X
+			esp.prepareData.GyroX = Y
+			esp.prepareData.GyroX = Z
 
+		// case "dr1":
+		// 	fmt.Println(command, string(data))
+		// case "dr2":
+		// 	fmt.Println(command, string(data))
+		case "SendDataDone":
+			// send to chan if can
+			// and not wait if can`t
+			select {
+			case esp.dataChan <- esp.prepareData:
+				esp.prepareData = EspData{}
+			default:
+			}
+		default:
 			fmt.Printf("undefinded message: %s\n", string(buf[:n]))
 		}
 	}
@@ -149,10 +187,9 @@ func (esp *EspClient) handleIncomingCommand() {
 
 }
 
-func (esp *EspClient) GetRotatePos() (rX, rY, rZ float64) {
-	esp.mutex.Lock()
-	defer esp.mutex.Unlock()
-	return esp.rX, esp.rY, esp.rZ
+// GetDataChan return chan with data from esp
+func (esp *EspClient) GetDataChan() <-chan EspData {
+	return esp.dataChan
 }
 
 func (esp *EspClient) SetDriveRef(dr1, dr2 int) {
@@ -179,7 +216,7 @@ func (esp *EspClient) handleDriveRef() {
 func (esp *EspClient) IsWorking() bool {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
-	return esp.isInitializated && !esp.isDone
+	return esp.isStarted && !esp.isDone
 }
 
 func (esp *EspClient) IsDone() bool {
@@ -197,8 +234,17 @@ func (esp *EspClient) IsConnected() bool {
 func (esp *EspClient) Stop() {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
+	// send every comand several times
+	// and wait to send
 	esp.SendCommand("dr1", "0")
 	esp.SendCommand("dr2", "0")
+	esp.SendCommand("dr1", "0")
+	esp.SendCommand("dr2", "0")
+	esp.SendCommand("dr1", "0")
+	esp.SendCommand("dr2", "0")
+	esp.SendCommand("dr1", "0")
+	esp.SendCommand("dr2", "0")
+	time.Sleep(100 * time.Millisecond)
 	esp.udpConn.Close()
 	esp.isDone = true
 }
