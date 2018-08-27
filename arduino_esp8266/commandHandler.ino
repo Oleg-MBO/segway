@@ -35,6 +35,10 @@ void sendData(String  command, String  data) {
     Udp.print("<");
     Udp.endPacket();
 
+//    Serial.print(command);
+//    Serial.print(": ");
+//    Serial.println(data);
+
   }
   //  else {
   //    Serial.print(command);

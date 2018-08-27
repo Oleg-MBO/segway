@@ -79,7 +79,7 @@ void mpu_setup()
 void mpu_loop()
 {
   // if programming failed, don't try to do anything
-  if (!mpuInterrupt) return;
+  if (mpuInterrupt) return;
   mpuInterrupt = false;
 
   mpu6050.update();
