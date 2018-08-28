@@ -26,7 +26,8 @@ type EspClient struct {
 	lastMessageTime time.Time
 	buf             []byte
 
-	dataChan chan EspData
+	dataChan     chan EspData
+	errorHandler func(error)
 
 	prepareData EspData
 }
@@ -44,24 +45,38 @@ func InitEspClient(address string) (*EspClient, error) {
 	}
 	client.espAddr = ESPAddr
 
-	conn, err := net.DialUDP("udp", nil, ESPAddr)
-	if err != nil {
-		return client, err
-	}
-	client.udpConn = conn
-
 	client.buf = make([]byte, 120)
 
 	client.isStarted = false
 	client.isDone = false
 
 	client.dataChan = make(chan EspData, 1)
+	client.errorHandler = func(err error) {
+		log.Printf("%#v", err)
+	}
 
 	return client, nil
 }
 
-func (esp *EspClient) Start() {
+// SetErrCalback set func for handle errors
+func (esp *EspClient) SetErrCalback(f func(err error)) {
+	esp.errorHandler = f
+}
+
+// HandleErr set func for handle errors
+func (esp *EspClient) HandleErr(err error) {
+	esp.errorHandler(err)
+}
+
+// Start is user for start gorutines to correct work
+func (esp *EspClient) Start() error {
 	if !esp.isStarted {
+		conn, err := net.DialUDP("udp", nil, esp.espAddr)
+		if err != nil {
+			return err
+		}
+		esp.udpConn = conn
+
 		go esp.handleIncomingCommand()
 		// send hello command every 1.5 s
 		go func() {
@@ -72,12 +87,16 @@ func (esp *EspClient) Start() {
 			}
 
 		}()
+
+		go esp.handleDriveRef()
+
 	}
 
-	go esp.handleDriveRef()
-	esp.isStarted = false
+	esp.isStarted = true
+	return nil
 }
 
+// SendCommand is used for send command and data
 func (esp *EspClient) SendCommand(command, data string) {
 	msg := fmt.Sprintf(">%s:%s<", command, data)
 
@@ -101,7 +120,7 @@ func (esp *EspClient) handleIncomingCommand() {
 		n, _, err := esp.udpConn.ReadFromUDP(buf)
 
 		if err != nil {
-			fmt.Println(err)
+			esp.HandleErr(err)
 			continue
 		}
 		// if n == 0 {
@@ -130,7 +149,7 @@ func (esp *EspClient) handleIncomingCommand() {
 		case "SendAngles":
 			X, Y, Z, err := parceXYZ(dataStr)
 			if err != nil {
-				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				esp.HandleErr(&ErrParceData{command, err})
 				continue
 			}
 			esp.prepareData.AngleX = X
@@ -142,7 +161,7 @@ func (esp *EspClient) handleIncomingCommand() {
 		case "SendAcc":
 			X, Y, Z, err := parceXYZ(dataStr)
 			if err != nil {
-				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				esp.HandleErr(&ErrParceData{command, err})
 				continue
 			}
 			esp.prepareData.AccX = X
@@ -151,7 +170,7 @@ func (esp *EspClient) handleIncomingCommand() {
 		case "SendAccAngle":
 			X, Y, Z, err := parceXYZ(dataStr)
 			if err != nil {
-				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				esp.HandleErr(&ErrParceData{command, err})
 				continue
 			}
 			esp.prepareData.AAngleX = X
@@ -160,7 +179,7 @@ func (esp *EspClient) handleIncomingCommand() {
 		case "SendGyroAngle":
 			X, Y, Z, err := parceXYZ(dataStr)
 			if err != nil {
-				log.Printf(`Error during parse command "%s" err:%#v`, command, err)
+				esp.HandleErr(&ErrParceData{command, err})
 				continue
 			}
 			esp.prepareData.GyroX = X
@@ -180,11 +199,10 @@ func (esp *EspClient) handleIncomingCommand() {
 			default:
 			}
 		default:
-			fmt.Printf("undefinded message: %s\n", string(buf[:n]))
+			esp.HandleErr(&ErrUndefinnedCommand{string(buf[:n])})
 		}
 	}
-	log.Println("esp is done.")
-
+	esp.HandleErr(&ErrEspIsDone{})
 }
 
 // GetDataChan return chan with data from esp
@@ -192,6 +210,7 @@ func (esp *EspClient) GetDataChan() <-chan EspData {
 	return esp.dataChan
 }
 
+// SetDriveRef is used for set reference on drive
 func (esp *EspClient) SetDriveRef(dr1, dr2 int) {
 	esp.mutex.Lock()
 	esp.dr1 = dr1
@@ -200,8 +219,12 @@ func (esp *EspClient) SetDriveRef(dr1, dr2 int) {
 }
 
 func (esp *EspClient) handleDriveRef() {
-
-	for !esp.IsDone() {
+	ticker := time.NewTicker(time.Millisecond * 5)
+	defer ticker.Stop()
+	for range ticker.C {
+		if esp.IsDone() {
+			return
+		}
 		esp.mutex.Lock()
 		dr1 := esp.dr1
 		dr2 := esp.dr2
@@ -209,28 +232,31 @@ func (esp *EspClient) handleDriveRef() {
 
 		esp.SendCommand("dr1", strconv.Itoa(dr1))
 		esp.SendCommand("dr2", strconv.Itoa(dr2))
-		time.Sleep(time.Millisecond * 5)
 	}
 }
 
+// IsWorking return true if driver on work
 func (esp *EspClient) IsWorking() bool {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
 	return esp.isStarted && !esp.isDone
 }
 
+// IsDone return true if Stop was called
 func (esp *EspClient) IsDone() bool {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
 	return esp.isDone
 }
 
+// IsConnected return false if more than 0.5s hasn`t got messa
 func (esp *EspClient) IsConnected() bool {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
 	return time.Now().Sub(esp.lastMessageTime).Seconds() <= 0.5
 }
 
+// Stop is used for stop sending reference data
 func (esp *EspClient) Stop() {
 	esp.mutex.Lock()
 	defer esp.mutex.Unlock()
