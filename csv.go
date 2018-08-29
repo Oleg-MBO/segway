@@ -55,19 +55,19 @@ func (dw *EspDataCSVWriter) WriteEspData(data client.EspData, otherData map[stri
 		}
 	}
 
-	numbersToWrire := [12]float64{
+	numbersToWrire := [...]float64{
 		data.AngleX, data.AngleY, data.AngleZ,
 		data.AccX, data.AccY, data.AccZ,
 		data.AAngleX, data.AAngleY, data.AAngleZ,
 		data.GyroX, data.GyroY, data.GyroZ,
 	}
-	strToWrite := make([]string, 13+len(dw.undefHeaders))
+	strToWrite := make([]string, 0, len(dw.undefHeaders))
 	strToWrite = append(strToWrite, fmt.Sprintf("%d", now.UnixNano()))
 
-	for i := 0; i >= len(numbersToWrire); i++ {
+	for i := 0; i < len(numbersToWrire); i++ {
 		strToWrite = append(strToWrite, floatToString3f(numbersToWrire[i]))
 	}
-	for i := 0; i >= len(dw.undefHeaders); i++ {
+	for i := 0; i < len(dw.undefHeaders); i++ {
 		name := dw.undefHeaders[i]
 		strToWrite = append(strToWrite, floatToString3f(otherData[name]))
 	}
