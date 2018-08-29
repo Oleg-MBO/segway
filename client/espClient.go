@@ -30,6 +30,8 @@ type EspClient struct {
 	errorHandler func(error)
 
 	prepareData EspData
+
+	sendAcc, sendGyroAngle, sendAccAngle bool
 }
 
 // InitEspClient initialase esp client and return structure with client
@@ -94,6 +96,39 @@ func (esp *EspClient) Start() error {
 
 	esp.isStarted = true
 	return nil
+}
+
+// EnableConf is used to enable sending additional data
+// like send axeleration or giro angle
+func (esp *EspClient) EnableConf(confConst espConf) {
+	switch confConst {
+	case SendAcc:
+		esp.sendAcc = true
+	case SendAccAngle:
+		esp.sendAccAngle = true
+	case SendGyroAngle:
+		esp.sendGyroAngle = true
+	}
+}
+
+// DisableConf is used to disable sending additional data
+// like send axeleration or giro angle
+func (esp *EspClient) DisableConf(confConst espConf) {
+	switch confConst {
+	case SendAcc:
+		esp.sendAcc = false
+	case SendAccAngle:
+		esp.sendAccAngle = false
+	case SendGyroAngle:
+		esp.sendGyroAngle = false
+	}
+}
+
+func (esp *EspClient) sendConf() {
+	esp.SendCommand("SendAcc", boolTo1or0(esp.sendAcc))
+	esp.SendCommand("SendGyroAngle", boolTo1or0(esp.sendGyroAngle))
+	esp.SendCommand("SendAccAngle", boolTo1or0(esp.sendAccAngle))
+
 }
 
 // SendCommand is used for send command and data
@@ -219,19 +254,26 @@ func (esp *EspClient) SetDriveRef(dr1, dr2 int) {
 }
 
 func (esp *EspClient) handleDriveRef() {
-	ticker := time.NewTicker(time.Millisecond * 5)
-	defer ticker.Stop()
-	for range ticker.C {
-		if esp.IsDone() {
-			return
-		}
-		esp.mutex.Lock()
-		dr1 := esp.dr1
-		dr2 := esp.dr2
-		esp.mutex.Unlock()
+	tickerDriveRef := time.NewTicker(time.Millisecond * 10)
+	defer tickerDriveRef.Stop()
 
-		esp.SendCommand("dr1", strconv.Itoa(dr1))
-		esp.SendCommand("dr2", strconv.Itoa(dr2))
+	tickerSetOtherSetup := time.NewTicker(time.Millisecond * 1000)
+	defer tickerSetOtherSetup.Stop()
+
+	for esp.IsWorking() {
+		select {
+		case <-tickerDriveRef.C:
+			esp.mutex.Lock()
+			dr1 := esp.dr1
+			dr2 := esp.dr2
+			esp.mutex.Unlock()
+
+			esp.SendCommand("dr1", strconv.Itoa(dr1))
+			esp.SendCommand("dr2", strconv.Itoa(dr2))
+		case <-tickerSetOtherSetup.C:
+			esp.sendConf()
+		}
+
 	}
 }
 
@@ -270,7 +312,7 @@ func (esp *EspClient) Stop() {
 	esp.SendCommand("dr2", "0")
 	esp.SendCommand("dr1", "0")
 	esp.SendCommand("dr2", "0")
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(10 * time.Millisecond)
 	esp.udpConn.Close()
 	esp.isDone = true
 }

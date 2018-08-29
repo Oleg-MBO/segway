@@ -27,3 +27,10 @@ func parceXYZ(data string) (X, Y, Z float64, err error) {
 
 	return
 }
+
+func boolTo1or0(b bool) string {
+	if b {
+		return "1"
+	}
+	return "0"
+}
