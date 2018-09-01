@@ -29,7 +29,7 @@ type EspClient struct {
 	dataChan     chan EspData
 	errorHandler func(error)
 
-	prepareData EspData
+	prevMilis uint64
 
 	sendAcc, sendGyroAngle, sendAccAngle bool
 }
@@ -111,25 +111,25 @@ func (esp *EspClient) EnableConf(confConst espConf) {
 	}
 }
 
-// DisableConf is used to disable sending additional data
-// like send axeleration or giro angle
-func (esp *EspClient) DisableConf(confConst espConf) {
-	switch confConst {
-	case SendAcc:
-		esp.sendAcc = false
-	case SendAccAngle:
-		esp.sendAccAngle = false
-	case SendGyroAngle:
-		esp.sendGyroAngle = false
-	}
-}
+// // DisableConf is used to disable sending additional data
+// // like send axeleration or giro angle
+// func (esp *EspClient) DisableConf(confConst espConf) {
+// 	switch confConst {
+// 	case SendAcc:
+// 		esp.sendAcc = false
+// 	case SendAccAngle:
+// 		esp.sendAccAngle = false
+// 	case SendGyroAngle:
+// 		esp.sendGyroAngle = false
+// 	}
+// }
 
-func (esp *EspClient) sendConf() {
-	esp.SendCommand("SendAcc", boolTo1or0(esp.sendAcc))
-	esp.SendCommand("SendGyroAngle", boolTo1or0(esp.sendGyroAngle))
-	esp.SendCommand("SendAccAngle", boolTo1or0(esp.sendAccAngle))
+// func (esp *EspClient) sendConf() {
+// 	esp.SendCommand("SendAcc", boolTo1or0(esp.sendAcc))
+// 	esp.SendCommand("SendGyroAngle", boolTo1or0(esp.sendGyroAngle))
+// 	esp.SendCommand("SendAccAngle", boolTo1or0(esp.sendAccAngle))
 
-}
+// }
 
 // SendCommand is used for send command and data
 func (esp *EspClient) SendCommand(command, data string) {
@@ -144,11 +144,11 @@ func (esp *EspClient) SendCommand(command, data string) {
 }
 
 func (esp *EspClient) handleIncomingCommand() {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Println("handleIncomingCommand Recovered in f", r)
-		}
-	}()
+	// defer func() {
+	// 	if r := recover(); r != nil {
+	// 		log.Println("handleIncomingCommand Recovered in f", r)
+	// 	}
+	// }()
 	buf := esp.buf
 
 	for !esp.IsDone() {
@@ -174,6 +174,9 @@ func (esp *EspClient) handleIncomingCommand() {
 			// this is not command
 			continue
 		}
+
+		// fmt.Println(string(buf[startTagPos : endTagPos+1]))
+
 		command := string(buf[startTagPos+1 : dataPos])
 		data := make([]byte, endTagPos-dataPos, endTagPos-dataPos)
 		copy(data[:], buf[dataPos+1:endTagPos])
@@ -182,57 +185,23 @@ func (esp *EspClient) handleIncomingCommand() {
 
 		switch command {
 		case "SendAngles":
-			X, Y, Z, err := parceXYZ(dataStr)
-			if err != nil {
-				esp.HandleErr(&ErrParceData{command, err})
-				continue
-			}
-			esp.prepareData.AngleX = X
-			esp.prepareData.AngleY = Y
-			esp.prepareData.AngleZ = Z
 
-			// fmt.Printf("x %4.2f y %4.2f z%4.2f\n", rX, rY, rZ)
+			espData, err := parceEspData(dataStr)
+			if err != nil {
+				esp.HandleErr(fmt.Errorf("error parse command \"SendAngles\":%v", err))
+				continue
+			}
+			if espData.Milis <= esp.prevMilis {
+				continue
+			}
+			esp.prevMilis = espData.Milis
 
-		case "SendAcc":
-			X, Y, Z, err := parceXYZ(dataStr)
-			if err != nil {
-				esp.HandleErr(&ErrParceData{command, err})
-				continue
-			}
-			esp.prepareData.AccX = X
-			esp.prepareData.AccY = Y
-			esp.prepareData.AccZ = Z
-		case "SendAccAngle":
-			X, Y, Z, err := parceXYZ(dataStr)
-			if err != nil {
-				esp.HandleErr(&ErrParceData{command, err})
-				continue
-			}
-			esp.prepareData.AAngleX = X
-			esp.prepareData.AAngleX = Y
-			esp.prepareData.AAngleX = Z
-		case "SendGyroAngle":
-			X, Y, Z, err := parceXYZ(dataStr)
-			if err != nil {
-				esp.HandleErr(&ErrParceData{command, err})
-				continue
-			}
-			esp.prepareData.GyroX = X
-			esp.prepareData.GyroX = Y
-			esp.prepareData.GyroX = Z
-
-		// case "dr1":
-		// 	fmt.Println(command, string(data))
-		// case "dr2":
-		// 	fmt.Println(command, string(data))
-		case "SendDataDone":
-			// send to chan if can
-			// and not wait if can`t
 			select {
-			case esp.dataChan <- esp.prepareData:
-				esp.prepareData = EspData{}
+			case esp.dataChan <- espData:
+
 			default:
 			}
+
 		default:
 			esp.HandleErr(&ErrUndefinnedCommand{string(buf[:n])})
 		}
@@ -254,11 +223,11 @@ func (esp *EspClient) SetDriveRef(dr1, dr2 int) {
 }
 
 func (esp *EspClient) handleDriveRef() {
-	tickerDriveRef := time.NewTicker(time.Millisecond * 10)
+	tickerDriveRef := time.NewTicker(time.Millisecond * 10 * 5)
 	defer tickerDriveRef.Stop()
 
-	tickerSetOtherSetup := time.NewTicker(time.Millisecond * 1000)
-	defer tickerSetOtherSetup.Stop()
+	// tickerSetOtherSetup := time.NewTicker(time.Millisecond * 1000 * 10)
+	// defer tickerSetOtherSetup.Stop()
 
 	for esp.IsWorking() {
 		select {
@@ -270,8 +239,8 @@ func (esp *EspClient) handleDriveRef() {
 
 			esp.SendCommand("dr1", strconv.Itoa(dr1))
 			esp.SendCommand("dr2", strconv.Itoa(dr2))
-		case <-tickerSetOtherSetup.C:
-			esp.sendConf()
+			// case <-tickerSetOtherSetup.C:
+			// 	esp.sendConf()
 		}
 
 	}

@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"os/signal"
+	"runtime/pprof"
 	"strings"
 	"time"
 
@@ -33,17 +34,28 @@ func main() {
 
 	flag.StringVar(&csvFileName, "csv", "", "save data to csv file if specified")
 
-	flag.BoolVar(&SendAcc, "acc", false, "is used to enable sending angle from gyroscope")
-	flag.BoolVar(&SendGyroAngle, "gyroA", false, "is used to enable sending angle from gyroscope")
-	flag.BoolVar(&SendAccAngle, "accA", false, "is used to enable sending angle form accelerometer")
-	flag.BoolVar(&SendAllData, "all", false, "is used to enable sending ALL data from esp")
+	// flag.BoolVar(&SendAcc, "acc", false, "is used to enable sending angle from gyroscope")
+	// flag.BoolVar(&SendGyroAngle, "gyroA", false, "is used to enable sending angle from gyroscope")
+	// flag.BoolVar(&SendAccAngle, "accA", false, "is used to enable sending angle form accelerometer")
+	// flag.BoolVar(&SendAllData, "all", false, "is used to enable sending ALL data from esp")
+
+	var cpuprofile = flag.String("cpuprofile", "", "write cpu profile to `file`")
 
 	flag.Parse()
 
-	// nothing to do with data
-	writeToCsv := func(data client.EspData, otherData map[string]float64) {
-
+	if *cpuprofile != "" {
+		f, err := os.Create(*cpuprofile)
+		if err != nil {
+			log.Fatal("could not create CPU profile: ", err)
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			log.Fatal("could not start CPU profile: ", err)
+		}
+		defer pprof.StopCPUProfile()
 	}
+
+	// nothing to do with data
+	writeToCsv := func(data client.EspData, otherData map[string]float64) {}
 
 	if csvFileName != "" {
 		if !strings.HasSuffix(csvFileName, ".csv") {
@@ -98,7 +110,7 @@ func main() {
 
 	segwayErrChan := make(chan error, 1)
 	segway.SetErrCalback(func(err error) {
-		log.Println("segway err:", err)
+		log.Printf("segway err: %v\n", err)
 		segwayErrChan <- err
 	})
 
@@ -145,8 +157,8 @@ func main() {
 	now := time.Now()
 	prev := time.Now()
 
-	// ticker := time.NewTicker(time.Millisecond * 10)
 	printTicker := time.NewTicker(time.Millisecond * 100)
+	defer printTicker.Stop()
 
 	var rY float64
 
@@ -156,14 +168,20 @@ func main() {
 	for segway.IsWorking() {
 		select {
 		case data := <-segwayDataChan:
+			// fmt.Println(data.AngleY)
+			if !data.HasAngles() {
+				continue
+			}
+
 			dt := now.Sub(prev).Seconds()
 			prev = now
 			now = time.Now()
 
-			// _, rY, _ = segway.GetRotatePos()
-			rY = data.AngleY
+			// fmt.Println("dt", dt)
+
+			rY1 := data.AngleY
 			// rY = 95.0 + rYOffset - rY
-			rY = 92.1 - rY
+			rY = rY1 - 1.3
 
 			apLink1.Update(dt, rY)
 			apLink2.Update(dt, apLink1.Output())
@@ -210,7 +228,6 @@ func main() {
 			}
 
 			if math.Abs(rY) > 60 {
-				segway.SetDriveRef(0, 0)
 				fmt.Println("|angle| > 60, angle ==", rY)
 				continue
 			}

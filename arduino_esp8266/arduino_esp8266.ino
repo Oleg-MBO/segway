@@ -25,6 +25,15 @@ extern bool getAccData;
 extern bool getGyroAngleData;
 extern bool getAccAngleData;
 
+extern bool needSendNewData;
+
+//commands
+extern String commandSendAngles;
+
+//gyro
+#include <MPU6050_tockn.h>
+extern MPU6050 mpu6050;
+
 WiFiUDP Udp;
 unsigned int localUdpPort = 4210;  // local port to listen on
 char incomingPacket[udpBufferLength];  // buffer for incoming packets
@@ -151,8 +160,8 @@ void loop()
   }
   //  END HANDLE COMMAND
 
+
   unsigned long  now = millis();
-  //  unsigned long lastCommandDelay = now - timeLastCommangGot;
   if ((now - timeLastCommangGot) > 2000) {
     //    if 2s haven`t got messages
     timeLastCommangGot = now;
@@ -164,8 +173,37 @@ void loop()
     Serial.print( WiFi.localIP().toString().c_str());
     Serial.print(":");
     Serial.println(localUdpPort);
+  } else if (needSendNewData && gotmessage) {
+    //  send new data from gyro
+
+    unsigned long now = millis();
+    String nowStr = String(now);
+
+    String sep = "|";
+    String data1 = nowStr + sep + \
+                   String(mpu6050.getAngleX()) + sep + \
+                   String(mpu6050.getAngleY()) + sep + \
+                   String(mpu6050.getAngleZ()) + sep + \
+                   String(mpu6050.getAccX()) + sep + \
+                   String(mpu6050.getAccY()) + sep + \
+                   String(mpu6050.getAccZ()) + sep + \
+                   String(mpu6050.getGyroAngleX()) + sep + \
+                   String(mpu6050.getGyroAngleY()) + sep + \
+                   String(mpu6050.getGyroAngleZ()) + sep + \
+                   String(mpu6050.getAccAngleX()) + sep + \
+                   String(mpu6050.getAccAngleY()) + sep + \
+                   String(0.0);
+
+
+    sendData(commandSendAngles, data1);
+    needSendNewData = false;
   }
 
 }
+
+//String XYZData(float x , float y , float z ) {
+//  String data = String("X ") + String(x) + String(";Y ") + String(y) + String(";Z ") + String(z);
+//  return data;
+//}
 
 

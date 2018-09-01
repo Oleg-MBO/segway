@@ -2,6 +2,9 @@ package client
 
 // EspData represent data which
 type EspData struct {
+	// time from start esp
+	Milis uint64
+
 	AngleX, AngleY, AngleZ float64
 
 	// axceleration by axes

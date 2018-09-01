@@ -11,8 +11,4 @@ const int D1DIR = 14;
 const int D2PWM = 12;
 const int D2DIR = 16;
 
-
-bool getAccData = false;
-bool getGyroAngleData = false;
-bool getAccAngleData = false;
-
+bool needSendNewData = false;

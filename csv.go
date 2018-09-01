@@ -4,7 +4,6 @@ import (
 	"encoding/csv"
 	"fmt"
 	"io"
-	"time"
 
 	"github.com/Oleg-MBO/segway/client"
 )
@@ -24,7 +23,7 @@ func NewEspDataCSVWriter(w io.Writer) *EspDataCSVWriter {
 }
 
 func (dw *EspDataCSVWriter) WriteEspDataHeaders(undefHeaders []string) error {
-	headers := []string{"unixNano",
+	headers := []string{"milis",
 		"AngleX", "AngleY", "AngleZ",
 		"AccX", "AccY", "AccZ",
 		"AAngleX", "AAngleY", "AAngleZ",
@@ -42,10 +41,8 @@ func (dw *EspDataCSVWriter) WriteEspDataHeaders(undefHeaders []string) error {
 }
 
 func (dw *EspDataCSVWriter) WriteEspData(data client.EspData, otherData map[string]float64) error {
-	now := time.Now()
 	if !dw.isHeadersWrited {
-		otherDataHeaders := make([]string, len(otherData))
-
+		otherDataHeaders := make([]string, 0, len(otherData))
 		for k := range otherData {
 			otherDataHeaders = append(otherDataHeaders, k)
 		}
@@ -61,8 +58,8 @@ func (dw *EspDataCSVWriter) WriteEspData(data client.EspData, otherData map[stri
 		data.AAngleX, data.AAngleY, data.AAngleZ,
 		data.GyroX, data.GyroY, data.GyroZ,
 	}
-	strToWrite := make([]string, 0, len(dw.undefHeaders))
-	strToWrite = append(strToWrite, fmt.Sprintf("%d", now.UnixNano()))
+	strToWrite := make([]string, 0, len(numbersToWrire)+len(dw.undefHeaders))
+	strToWrite = append(strToWrite, fmt.Sprintf("%d", data.Milis))
 
 	for i := 0; i < len(numbersToWrire); i++ {
 		strToWrite = append(strToWrite, floatToString3f(numbersToWrire[i]))

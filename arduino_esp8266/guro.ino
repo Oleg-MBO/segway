@@ -2,6 +2,8 @@ extern bool getAccData;
 extern bool getGyroAngleData;
 extern bool getAccAngleData;
 
+extern bool needSendNewData;
+
 /* ============================================
   I2Cdev device library code is placed under the MIT license
   Copyright (c) 2012 Jeff Rowberg
@@ -83,56 +85,8 @@ void mpu_loop()
   mpuInterrupt = false;
 
   mpu6050.update();
-
-  //  Serial.print("angleX : ");
-  //  Serial.print(mpu6050.getAngleX());
-  //  Serial.print("\tangleY : ");
-  //  Serial.print(mpu6050.getAngleY());
-  //  Serial.print("\tangleZ : ");
-  //  Serial.println(mpu6050.getAngleZ());
-
-
-
-  //  SEND commandSendAngles command
-  String data = String("X ") + String(mpu6050.getAngleX());
-  data = data + String(";Y ");
-  data = data + String(mpu6050.getAngleY());
-  data = data + String(";Z ");
-  data = data + String(mpu6050.getAngleZ());
-
-  //  sendData(commandSendAngles, data );
-  sendData(commandSendAngles, XYZData(mpu6050.getAngleX(), mpu6050.getAngleY(), mpu6050.getAngleZ() ));
-
-  //  END SEND commandSendAngles comma
-
-
-  if (getAccData) {
-    //    String data = String("X ") + String(mpu6050.getAccX());
-    //    data = data + String(";Y ");
-    //    data = data + String(mpu6050.getAccY());
-    //    data = data + String(";Z ");
-    //    data = data + String(mpu6050.getAccZ());
-    sendData(commandSendAcc, XYZData(mpu6050.getAccX(), mpu6050.getAccY(), mpu6050.getAccZ() ));
-  }
-  if (getGyroAngleData) {
-    //    String data = String("X ") + String(mpu6050.getAccX());
-    //    data = data + String(";Y ");
-    //    data = data + String(mpu6050.getAccY());
-    //    data = data + String(";Z ");
-    //    data = data + String(mpu6050.getAccZ());
-    sendData(commandSendGyroAngle, XYZData(mpu6050.getGyroAngleX(), mpu6050.getGyroAngleY(), mpu6050.getGyroAngleZ()));
-  }
-
-  if ( getAccAngleData) {
-    sendData(commandSendAccAngle, XYZData(mpu6050.getAccAngleX(), mpu6050.getAccAngleY(), 0));
-  }
-
-  sendData(commandSendDataDone, "1" );
+  needSendNewData = true;
 }
 
-String XYZData(float x , float y , float z ) {
-  String data = String("X ") + String(x) + String(";Y ") + String(y) + String(";Z ") + String(z);
-  return data;
-}
 
 
