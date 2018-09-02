@@ -2,9 +2,9 @@ package pid
 
 // PID represent PID regulator
 type PID struct {
-	pRegul *PRegul
-	dRegul *DRegul
-	iRegul *IRegul
+	P *PRegul
+	D *DRegul
+	I *IRegul
 }
 
 // NewPID create new PID regulator
@@ -19,17 +19,32 @@ func NewPID(pRegul *PRegul, dRegul *DRegul, iRegul *IRegul) *PID {
 		iRegul = NewIRegul(0, 0)
 	}
 
-	return &PID{pRegul: pRegul, dRegul: dRegul, iRegul: iRegul}
+	return &PID{P: pRegul, D: dRegul, I: iRegul}
+}
+
+type ConfNewPIDSimple struct {
+	P, D, DLim, I, Ilim float64
+}
+
+// NewPIDSimple create clasic new PID regulator from config
+func NewPIDSimple(conf ConfNewPIDSimple) *PID {
+
+	p := NewPRegul(conf.P)
+	d := NewDRegul(conf.D, conf.DLim)
+	i := NewIRegul(conf.I, conf.Ilim)
+	NewPID(p, d, i)
+
+	return NewPID(p, d, i)
 }
 
 // Update using for update value
 func (pid *PID) Update(dt float64, input float64) {
-	pid.pRegul.Update(dt, input)
-	pid.dRegul.Update(dt, input)
-	pid.iRegul.Update(dt, input)
+	pid.P.Update(dt, input)
+	pid.D.Update(dt, input)
+	pid.I.Update(dt, input)
 }
 
 // Output using for get value
 func (pid *PID) Output() float64 {
-	return pid.pRegul.Output() + pid.dRegul.Output() + pid.iRegul.Output()
+	return pid.P.Output() + pid.D.Output() + pid.I.Output()
 }

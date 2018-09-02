@@ -136,26 +136,13 @@ func main() {
 	apLinkOut := tool.NewAperiodicLink(apLinkT)
 
 	// rYOffset := 2.0
-
-	pkoef := 75.0
-	pkoef = 1024 / 5
-
-	dkoef := 0.75
-	// dkoef = 0.0
-	dlim := 500.0
-
-	ikoef := 5.0
-	ilim := 10.0
-
-	ikoef = 0
-
-	p := pidR.NewPRegul(pkoef)
-	d := pidR.NewDRegul(dkoef, dlim)
-	i := pidR.NewIRegul(ikoef, ilim)
-	pid := pidR.NewPID(p, d, i)
-
-	now := time.Now()
-	prev := time.Now()
+	pid := pidR.NewPIDSimple(pidR.ConfNewPIDSimple{
+		P:    1024 / 5,
+		D:    0.75,
+		DLim: 500.0,
+		I:    5.0,
+		Ilim: 10.0,
+	})
 
 	printTicker := time.NewTicker(time.Millisecond * 100)
 	defer printTicker.Stop()
@@ -165,32 +152,26 @@ func main() {
 	otherDataToCsv := make(map[string]float64)
 
 	segwayDataChan := segway.GetDataChan()
+
+	var prevMilis uint64
+
 	for segway.IsWorking() {
 		select {
 		case data := <-segwayDataChan:
-			// fmt.Println(data.AngleY)
-			if !data.HasAngles() {
+
+			if prevMilis == 0 {
+				prevMilis = data.Milis
 				continue
 			}
+			dt := (float64(data.Milis) - float64(prevMilis)) / 1000
+			prevMilis = data.Milis
 
-			dt := now.Sub(prev).Seconds()
-			prev = now
-			now = time.Now()
-
-			// fmt.Println("dt", dt)
-
-			rY1 := data.AngleY
-			// rY = 95.0 + rYOffset - rY
+			rY1 := data.AngleX
 			rY = rY1 - 1.3
 
 			apLink1.Update(dt, rY)
 			apLink2.Update(dt, apLink1.Output())
 			rY = apLink2.Output()
-
-			// blind := 1.0
-			// if (rY > 0 && rY < blind) || (rY < 0 && rY > -blind) {
-			// 	rY = 0
-			// }
 
 			if math.Abs(rY) > 60 {
 				segway.SetDriveRef(0, 0)
@@ -214,9 +195,9 @@ func main() {
 			segway.SetDriveRef(dr1, dr1)
 
 			// write data to csv
-			otherDataToCsv["p"] = p.Output()
-			otherDataToCsv["i"] = i.Output()
-			otherDataToCsv["d"] = d.Output()
+			otherDataToCsv["p"] = pid.P.Output()
+			otherDataToCsv["i"] = pid.I.Output()
+			otherDataToCsv["d"] = pid.D.Output()
 			otherDataToCsv["pid"] = pid.Output()
 			writeToCsv(data, otherDataToCsv)
 
@@ -232,7 +213,7 @@ func main() {
 				continue
 			}
 
-			fmt.Printf("rY: %+7.3f | p:%+9.2f, d:%+9.2f, i:%+9.2f |pid:%+9.1f\n", rY, p.Output(), d.Output(), i.Output(), pid.Output())
+			fmt.Printf("rY: %+7.3f | p:%+9.2f, d:%+9.2f, i:%+9.2f |pid:%+9.1f\n", rY, pid.P.Output(), pid.D.Output(), pid.I.Output(), pid.Output())
 		case err := <-segwayErrChan:
 			switch err.(type) {
 			case *client.ErrEspIsDone:
