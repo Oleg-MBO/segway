@@ -237,8 +237,12 @@ func (esp *EspClient) handleDriveRef() {
 			dr2 := esp.dr2
 			esp.mutex.Unlock()
 
-			esp.SendCommand("dr1", strconv.Itoa(dr1))
-			esp.SendCommand("dr2", strconv.Itoa(dr2))
+			d1 := strconv.Itoa(dr1)
+			d2 := strconv.Itoa(dr2)
+			esp.SendCommand("dr", d1+"|"+d2)
+
+			// esp.SendCommand("dr1", strconv.Itoa(dr1))
+			// esp.SendCommand("dr2", strconv.Itoa(dr2))
 			// case <-tickerSetOtherSetup.C:
 			// 	esp.sendConf()
 		}

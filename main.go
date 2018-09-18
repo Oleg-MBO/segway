@@ -80,7 +80,7 @@ func main() {
 
 	}
 
-	segway, err := client.InitEspClient("192.168.0.110:4210")
+	segway, err := client.InitEspClient("192.168.173.150:4210")
 	checkErr(err)
 
 	// 	SendAcc       bool
@@ -178,7 +178,7 @@ func main() {
 				continue
 			}
 
-			apLinkOut.Update(dt, -(rY))
+			apLinkOut.Update(dt, (rY))
 			pid.Update(dt, apLinkOut.Output())
 
 			drMax := 2000
